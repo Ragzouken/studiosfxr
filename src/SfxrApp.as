@@ -210,15 +210,26 @@
 			
 			_individuals = new Vector.<Individual>();
 			
-			for (var y:int = 0; y < 2; ++y) {
-				for (var x:int = 0; x < 4; ++x) {
-					var individual:Individual = new Individual(this, x * spacing + offset, y * spacing + offset);
-					_individuals.push(individual);
-					addChild(individual);
-				}
+			///*
+			for (var i:int = 0; i < 6; ++i) {
+				var angle:Number = Math.PI * 2 / 6 * i;
+				var x:int = 320 + 100 * Math.cos(angle);
+				var y:int = 200 + 100 * Math.sin(angle);
+				
+				var synth:SfxrSynth = new SfxrSynth();
+				synth.params.randomize();
+				synth.params.waveType = 0;
+				
+				var individual:Individual = new Individual(this, x, y, synth, new Vector.<Individual>);
+				_individuals.push(individual);
+				addChild(individual);
 			}
 			
-			_confirmSelection = addButton("CONFIRM", selectionConfirmed, width/2 - 52, spacing + offset + 110 + 18);
+			addChild(individual.mutate());
+			
+			//*/
+			
+			//_confirmSelection = addButton("CONFIRM", selectionConfirmed, width/2 - 52, spacing + offset + 110 + 18);
 			
 			var divide:int = spacing + 110 + offset * 2;
 			
@@ -234,11 +245,11 @@
 			addChild(_sweeper);
 			_sweeper.enabled = false;
 			
-			_sweepVis = new Visualisation(_sweeper.x + sweeperWidth / 2, _sweeper.y + 54/2, _synthS.params);
+			_sweepVis = new Visualisation(_sweeper.x + sweeperWidth / 2, _sweeper.y + 54/2, 30, _synthS.params);
 			addChild(_sweepVis);
 			_sweepVis.enabled = false;
 			
-			_confirmCrossover = addButton("SELECT CHILD", childSelected, width/2 - 52, divide + (width - sweeperWidth) / 2 + 54 + 19);
+			_confirmCrossover = addButton("CREATE CHILD", childSelected, width/2 - 52, divide + (width - sweeperWidth) / 2 + 54 + 19);
 			_confirmCrossover.enabled = false;
 			
 			//addSlider("", "masterVolume", width/2 + offset - 50, topRowY + 30 + 54 + 7 + 30);
