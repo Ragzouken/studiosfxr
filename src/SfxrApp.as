@@ -1,5 +1,7 @@
 ﻿package  
 {
+	import flash.geom.Vector3D;
+	import flash.display.StageQuality;
 	import flash.display.CapsStyle;
 	import flash.display.DisplayObject;
 	import flash.display.GraphicsPath;
@@ -14,6 +16,7 @@
 	import flash.events.KeyboardEvent;
 	import flash.events.MouseEvent;
 	import flash.events.TextEvent;
+	import flash.events.WeakFunctionClosure;
 	import flash.geom.Rectangle;
 	import flash.net.FileFilter;
 	import flash.net.FileReference;
@@ -31,6 +34,7 @@
 	import flash.utils.ByteArray;
 	import flash.utils.Dictionary;
 	import flash.utils.Endian;
+	import ui.LinkPoint;
 	import ui.TinyButton;
 	import ui.TinyCheckbox;
 	import ui.TinySlider;
@@ -79,7 +83,8 @@
 	 * limitations under the License.
 	 */
 	
-	[SWF(width='640', height='527', backgroundColor='#C0B090', frameRate='25')]
+	 // 527
+	[SWF(width='640', height='777', backgroundColor='#C0B090', frameRate='25')]
 	public class SfxrApp extends Sprite
 	{
 		//--------------------------------------------------------------------------
@@ -125,11 +130,22 @@
 		private var _sweeper:TinySlider;
 		private var _confirmCrossover:TinyButton;
 		
-		private var _selected:Vector.<SfxrParams>;
-		private var _crossover:Vector.<SfxrParams>;
-		private var _recombined:Vector.<SfxrParams>;
-		
 		private var _sweepVis:Visualisation;
+		private var _sweepLLink:LinkPoint;
+		private var _sweepRLink:LinkPoint;
+		
+		private var _linkListeners:Dictionary;
+		
+		private var _selected:Individual;
+		
+		private var _mutate:TinyButton;
+		private var _save:TinyButton;
+		private var _export:TinyButton;
+		
+		private var _gameLinks:Vector.<LinkPoint>;
+		private var _gameLabels:Vector.<TextField>;
+		
+		private var _focus:String;
 		
 		//--------------------------------------------------------------------------
 		//	
@@ -158,21 +174,48 @@
 		 */
 		private function init(e:Event = null):void
 		{
+			stage.quality = StageQuality.HIGH;
+			
 			removeEventListener(Event.ADDED_TO_STAGE, init);
 			
-			_propLookup = new Dictionary();
-			_sliderLookup = {};
-			_waveformLookup = [];
-			_squareLookup = [];
-			
-			_history = new Vector.<SfxrParams>();
-			//_history.push(_synthS.params);
+			_linkListeners = new Dictionary();
 			
 			setupSweeper();
 			drawCopyPaste();
 			
 			updateSliders();
 			updateCopyPaste();
+		}
+		
+		public function linkEvent(individual:Individual, x:int, y:int):void
+		{
+			for (var listener:* in _linkListeners) {
+				listener(individual, x, y);
+			}
+		}
+		
+		public function addLinkListener(listener:Function):void
+		{
+			_linkListeners[listener] = true;
+		}
+		
+		public function removeLinkListener(listener:Function):void
+		{
+			delete _linkListeners[listener];
+		}
+		
+		public function selected(individual:Individual):void
+		{
+			if (_selected != null) {
+				_selected.selected = false;
+			}
+				
+			_selected = individual;
+			_selected.selected = true;
+			
+			_mutate.enabled = true;
+			_save.enabled = true;
+			_export.enabled = true;
 		}
 		
 		//--------------------------------------------------------------------------
@@ -195,16 +238,12 @@
 			
 			_synthS.params = _synthL.params.clone();
 			
-			_selected = new Vector.<SfxrParams>();
-			_crossover = new Vector.<SfxrParams>();
-			_recombined = new Vector.<SfxrParams>();
-			
 			var width:int  = 640;
-			var height:int = 160;
+			var gameHeight:int = 250;
 			
 			var sweeperWidth:int = width - 8 - 104;
 			
-			var topRowY:int = 23 + 320;
+			var topRowY:int = 23 + 320 + gameHeight;
 			var spacing:int = (sweeperWidth - 110 * 4) / 3 + 110;
 			var offset:int = (width - sweeperWidth) / 2;
 			
@@ -214,29 +253,32 @@
 			for (var i:int = 0; i < 6; ++i) {
 				var angle:Number = Math.PI * 2 / 6 * i;
 				var x:int = 320 + 100 * Math.cos(angle);
-				var y:int = 200 + 100 * Math.sin(angle);
+				var y:int = 200 + gameHeight + 100 * Math.sin(angle);
 				
 				var synth:SfxrSynth = new SfxrSynth();
 				synth.params.randomize();
 				synth.params.waveType = 0;
 				
-				var individual:Individual = new Individual(this, x, y, synth, new Vector.<Individual>);
+				var individual:Individual = new Individual(this, x, y, synth, new Dictionary());
 				_individuals.push(individual);
 				addChild(individual);
 			}
 			
-			addChild(individual.mutate());
+			_individuals[0].selected = true;
+			_selected = _individuals[0];
 			
 			//*/
 			
 			//_confirmSelection = addButton("CONFIRM", selectionConfirmed, width/2 - 52, spacing + offset + 110 + 18);
 			
-			var divide:int = spacing + 110 + offset * 2;
+			var divide:int = spacing + 110 + offset * 2 + gameHeight;
 			
 			var lines:Vector.<IGraphicsData> = new Vector.<IGraphicsData>();
 			lines.push(new GraphicsStroke(1, false, LineScaleMode.NORMAL, CapsStyle.NONE, JointStyle.MITER, 3, new GraphicsSolidFill(0)));
 			lines.push(new GraphicsPath(Vector.<int>([1,2]), 
 										Vector.<Number>([0, divide, width, divide])));
+			lines.push(new GraphicsPath(Vector.<int>([1,2]), 
+										Vector.<Number>([0, gameHeight, width, gameHeight])));
 			graphics.drawGraphicsData(lines);
 			
 			_sweeper = new TinySlider(onSweeperChange, "", false, sweeperWidth, 54);
@@ -252,176 +294,261 @@
 			_confirmCrossover = addButton("CREATE CHILD", childSelected, width/2 - 52, divide + (width - sweeperWidth) / 2 + 54 + 19);
 			_confirmCrossover.enabled = false;
 			
+			var update:Function = function(linkpoint:LinkPoint, linked:Boolean):void
+			{
+				if (linkpoint == _sweepLLink && linked) { _synthL.params = _sweepLLink.individual.params; }
+				if (linkpoint == _sweepRLink && linked) { _synthR.params = _sweepRLink.individual.params; }
+				
+				var ready:Boolean = (_sweepLLink.linked && _sweepRLink.linked);
+				
+				if (ready) { _sweeper.value = _sweeper.value; }
+				_sweeper.enabled = ready;
+				_sweepVis.enabled = ready;
+				_confirmCrossover.enabled = ready;
+			}
+			
+			_sweepLLink = new LinkPoint(this, update);
+			_sweepLLink.x = _sweeper.x - 8;
+			_sweepLLink.y = _sweeper.y + 54 / 2 - 8;
+			addChild(_sweepLLink);
+			
+			_sweepRLink = new LinkPoint(this, update);
+			_sweepRLink.x = _sweeper.x + sweeperWidth - 8;
+			_sweepRLink.y = _sweeper.y + 54 / 2 - 8;
+			addChild(_sweepRLink);
+			
+			//_sweepLLink.individual = _individuals[0];
+			//_sweepRLink.individual = _individuals[1];
+			
+			this.addEventListener(Event.ENTER_FRAME, _sweepLLink.onDrawFrame);
+			this.addEventListener(Event.ENTER_FRAME, _sweepRLink.onDrawFrame);
+			
 			//addSlider("", "masterVolume", width/2 + offset - 50, topRowY + 30 + 54 + 7 + 30);
 			//graphics.lineStyle(2, 0xFF0000, 1, true, LineScaleMode.NORMAL, CapsStyle.SQUARE, JointStyle.MITER);
 			//graphics.drawRect(width/2-0.5 + offset + 50 - 42, topRowY+54+30+7+30-0.5, 43, 10);
 			
-			addLabel("SELECTION",        offset,      0, 0x504030);
+			addLabel("GAME",             offset, 0, 0x504030);
+			addLabel("POPULATION",       offset, gameHeight, 0x504030);
 			addLabel("MANUAL CROSSOVER", offset, divide, 0x504030);
 			
-			stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent):void {
-				if (!_confirmCrossover.enabled) { return; }
+			var mutate:Function = function (button:TinyButton):void
+			{
+				addChild(_selected.mutate(0.2));
+			};
+			
+			var _app:SfxrApp = this;
+			
+			var random:Function = function (button:TinyButton):void
+			{
+				var angle:Number  = Math.PI * 2 * Math.random();
+				var radius:Number = 50 + 50 * Math.random();
+				var x:int = 320 + radius * Math.cos(angle);
+				var y:int = 200 + radius * Math.sin(angle) + gameHeight;
 				
-				switch (e.keyCode) {
-					case Keyboard.LEFT:
-						_sweeper.value = Math.round((_sweeper.value - 0.1)*10) / 10;
-						break;
-					case Keyboard.RIGHT:
-						_sweeper.value = Math.round((_sweeper.value + 0.1)*10) / 10;
-						break;
-					case Keyboard.SPACE:
-					case Keyboard.UP:
-						_synthS.play();
-						break;
-					case Keyboard.ENTER:
-					case Keyboard.DOWN:
-						childSelected(null);
-						break;
+				var synth:SfxrSynth = new SfxrSynth();
+				synth.params.randomize();
+				synth.params.waveType = 0;
+				
+				var child:Individual = new Individual(_app, x, y, synth, new Dictionary());
+				addChild(child);
+				
+				selected(child);
+				synth.play();
+			};
+			
+			function loadnew():Function
+			{
+				var click:Function;
+				var select:Function;
+				var load:Function;
+				
+				var synth:SfxrSynth = new SfxrSynth();
+				
+				click = function(button:TinyButton):void {
+					_fileRef = new FileReference();
+					_fileRef.addEventListener(Event.SELECT, select);
+					_fileRef.browse([new FileFilter("SFX Sample Files (*.sfs)", "*.sfs")]);
+				}
+				
+				select = function(e:Event):void {
+					_fileRef.cancel();
+				
+					_fileRef.removeEventListener(Event.SELECT, select);
+					_fileRef.addEventListener(Event.COMPLETE, load);
+					_fileRef.load();
+				};
+				
+				load = function(e:Event):void {
+					_fileRef.removeEventListener(Event.COMPLETE, load);
+				
+					setSettingsFile(_fileRef.data, synth);
+					
+					_fileRef = null;
+					
+					var angle:Number  = Math.PI * 2 * Math.random();
+					var radius:Number = 30 * (2 + Math.random());
+					var x:int = _selected.x + radius * Math.cos(angle);
+					var y:int = _selected.y + radius * Math.sin(angle);
+					
+					var child:Individual = new Individual(_app, x, y, synth, new Vector.<Individual>());
+					addChild(child);
+					
+					_app.selected(child);
+					synth.play();
+				};
+				
+				return click;
+			}
+		
+			var save:Function = function(button:TinyButton):void {
+				var file:ByteArray = getSettingsFile(_selected.synth);
+				new FileReference().save(file, "sfx.sfs");
+			};
+			
+			var export:Function = function(button:TinyButton):void {
+				var file:ByteArray = _selected.synth.getWavFile(_sampleRate, _bitDepth);
+				new FileReference().save(file, "sfx.wav");
+			};
+			
+			var x:int = 640 - 104 - 8;
+			var y:int = gameHeight;
+			addLabel("SELECTED", x-4, y, 0x504030);
+			
+			_mutate = addButton("MUTATE",      mutate, x, y+22, false);
+			_save = addButton("SAVE .SFS",   save, x, y+44, false);
+			_export = addButton("EXPORT .WAV", export, x, y+66, false);
+			
+			addLabel("NEW INDIVIDUAL",       x-4, y+100, 0x504030);
+			addButton("RANDOM",      random, x, y+122, false);
+			addButton("LOAD .SFS",   loadnew(), x, y+144, false);
+			
+			stage.addEventListener(KeyboardEvent.KEY_DOWN, function(e:KeyboardEvent):void {
+				if (_focus == "SWEEP" && _sweeper.enabled) {
+					switch (e.keyCode) {
+						case Keyboard.LEFT:
+							_sweeper.value = Math.round((_sweeper.value - 0.1)*10) / 10;
+							break;
+						case Keyboard.RIGHT:
+							_sweeper.value = Math.round((_sweeper.value + 0.1)*10) / 10;
+							break;
+						case Keyboard.SPACE:
+						case Keyboard.UP:
+							_synthS.play();
+							break;
+						case Keyboard.ENTER:
+						case Keyboard.DOWN:
+							childSelected(null);
+							break;
+					}
+				} else if (_focus == "GAME") {
+					if (_gameLinks[0].linked) {
+						_gameLinks[0].individual.synth.play();
+					}
 				}
 			});
+			
+			
+			
+			_gameLinks = new Vector.<LinkPoint>();
+			_gameLabels = new Vector.<TextField>();
+			
+			var gap:int = (640) / 5;
+			
+			for (var i:int = 0; i < 5; ++i) {
+				var thing:Function = function(linkpoint:LinkPoint, linked:Boolean):void { };
+				
+				var link:LinkPoint = new LinkPoint(this, thing);
+				link.x = 40 - 16 + i * gap;
+				link.y = gameHeight - 40;
+				addChild(link);
+				
+				var label:TextField = addLabel("SOUND" + String(i+1), link.x + 18 + 2, link.y + 1, 0x504030);
+				addChild(label);
+				
+				_gameLinks.push(link);
+				_gameLabels.push(label);
+				
+				this.addEventListener(Event.ENTER_FRAME, link.onDrawFrame);
+			}
+			
+			_focus = "GAME";
+			
+			var focus:Function = function (e:MouseEvent):void {
+				trace(stage.mouseY + " " + gameHeight);
+				
+				if (stage.mouseY < gameHeight) {
+					_focus = "GAME";
+				} else {
+					_focus = "SWEEP";
+				}
+			};
+			
+			addEventListener(MouseEvent.MOUSE_UP, focus);
+			
+			setGamePlatformer();
+		}
+		
+		public function setGamePlatformer():void
+		{
+			_gameLabels[0].text = "JUMP";
+			_gameLabels[1].text = "COIN";
+			_gameLabels[2].text = "SHOOT";
+			_gameLabels[3].text = "UNUSED";
+			_gameLabels[4].text = "UNUSED";
+		}
+		
+		public function removeindividual(individual:Individual):void 
+		{
+			if (individual == _selected) {
+				_selected = null;
+				
+				_mutate.enabled = false;
+				_save.enabled = false;
+				_export.enabled = false;
+			}
+			
+			removeChild(individual);
 		}
 		
 		private function childSelected(button:TinyButton):void
 		{
-			_recombined.push(_synthS.params.clone());
+			var start:Vector3D = new Vector3D(_sweepLLink.individual.x, _sweepLLink.individual.y);
+			var end:Vector3D = new Vector3D(_sweepRLink.individual.x, _sweepRLink.individual.y);
 			
-			if (_crossover.length > 0) {
-				switchToCrossover();
-			} else {
-				switchToSelection();
-			}
-		}
-		
-		private function selectionConfirmed(button:TinyButton):void
-		{
-			_crossover.length = 0;
-			_recombined.length = 0;
+			var radius:Vector3D = end.subtract(start);
+			var offset:Vector3D;
 			
-			for each (var individual:Individual in _individuals) {
-				if (individual.selected) {
-					_selected.push(individual.params);
-				}
-			}
+			radius.normalize();
+			offset = radius.crossProduct(new Vector3D(0, 0, 1));
+			offset.scaleBy(_sweepLLink.individual.radius * 4 * (Math.random()*2 - 1));
 			
-			var pairings:Dictionary = new Dictionary();
-		
-			for each (var parent:SfxrParams in _selected) {
-				pairings[parent] = new Vector.<SfxrParams>();
-			}
+			radius.scaleBy(_sweepLLink.individual.radius * 2);
 			
-			for each (var parent:SfxrParams in _selected) {
-				if (_selected.length > pairings[parent].length + 1) {
-					var mate:SfxrParams = parent;
-					
-					while (mate === parent || pairings[mate].indexOf(parent) >= 0) {
-						mate = _selected[Math.floor(_selected.length * Math.random())];
-					}
-					
-					pairings[parent].push(mate);
-					pairings[mate].push(parent);
-					
-					_crossover.push(parent.clone());
-					_crossover.push(mate.clone());
-				}
-			}
+			start.incrementBy(radius);
+			end.decrementBy(radius);
 			
-			for (var i:int = 0; i < 8 - _crossover.length / 2; ++i) {
-				if (_selected.length > 0) {
-					var parent:SfxrParams = _selected[Math.floor(_selected.length * Math.random())];
-					
-					parent = parent.clone();
-					parent.mutate(0.75 / _selected.length);
-					parent.waveType = 0;
-					//parent.masterVolume = 0.5;
-					
-					_recombined.push(parent);
-				} else {
-					var random:SfxrParams = new SfxrParams();
-					random.randomize();
-					random.waveType = 0;
-					//random.masterVolume = 0.5;
-					_recombined.push(random);
-				}
-			}
+			var vector:Vector3D = end.subtract(start);
+			vector.scaleBy(_sweeper.value);
 			
-			_selected.length = 0;
+			var child:Vector3D = start.add(vector);
+			child.incrementBy(offset);
 			
-			// switch to cross over to perform remaining crossover
-			if (_crossover.length > 0) {
-				switchToCrossover();
-			} else {
-				switchToSelection();
-			}
-		}
-		
-		private function switchToCrossover():void
-		{
-			_synthL.params = _crossover.pop();
-			_synthR.params = _crossover.pop();
+			var parents:Dictionary = new Dictionary();
+			parents[_sweepLLink.individual] = true;
+			parents[_sweepRLink.individual] = true;
 			
-			for each (var individual:Individual in _individuals) {
-				individual.enabled = false;
-			}
+			var synth:SfxrSynth = new SfxrSynth();
+			synth.params = _synthS.params.clone();
 			
-			_confirmSelection.enabled = false;
+			var individual:Individual = new Individual(this, child.x, child.y, synth, parents);
 			
-			_sweeper.enabled = true;
-			_sweeper.value = 0.5;
-			_sweepVis.enabled = true;
-			_confirmCrossover.enabled = true;
-		}
-		
-		private function switchToSelection():void
-		{
-			for (var i:int = 0; i < 8; ++i) {
-				_individuals[i].params = _recombined[i];
-			}
+			_sweepLLink.individual._children[individual] = true;
+			_sweepRLink.individual._children[individual] = true;
 			
-			_recombined.length = 0;
+			_individuals.push(individual);
+			addChild(individual);
 			
-			for each (var individual:Individual in _individuals) {
-				individual.enabled = true;
-			}
-			
-			_confirmSelection.enabled = true;
-			
-			_sweeper.enabled = false;
-			_sweepVis.enabled = false;
-			_confirmCrossover.enabled = false;
-		}
-		
-		private function clickLoadFactory(synth:SfxrSynth):Function
-		{
-			var click:Function;
-			var select:Function;
-			var load:Function;
-			
-			click = function(button:TinyButton):void {
-				_fileRef = new FileReference();
-				_fileRef.addEventListener(Event.SELECT, select);
-				_fileRef.browse([new FileFilter("SFX Sample Files (*.sfs)", "*.sfs")]);
-			}
-			
-			select = function(e:Event):void {
-				_fileRef.cancel();
-			
-				_fileRef.removeEventListener(Event.SELECT, select);
-				_fileRef.addEventListener(Event.COMPLETE, load);
-				_fileRef.load();
-			};
-			
-			load = function(e:Event):void {
-				_fileRef.removeEventListener(Event.COMPLETE, load);
-			
-				//addToHistory();
-				setSettingsFile(_fileRef.data, synth);
-				//updateSliders();
-				updateCopyPaste();
-				
-				_fileRef = null;
-			};
-			
-			return click;
+			selected(individual);
 		}
 		
 		private function mix(left:Number, right:Number, u:Number):Number
@@ -543,65 +670,6 @@
 		
 		//--------------------------------------------------------------------------
 		//	
-		//  History Methods
-		//
-		//--------------------------------------------------------------------------
-		
-		/**
-		 * When the back button is clicked, moves back through the history
-		 * @param	button	TinyButton clicked
-		 */
-		private function clickBack(button:TinyButton):void
-		{
-			_historyPos--;
-			if(_historyPos == 0) 					_back.enabled = false;
-			if(_historyPos < _history.length - 1) 	_forward.enabled = true;
-			
-			//_synth.stop();
-			//_synth.params = _history[_historyPos];
-			
-			updateSliders();
-			updateCopyPaste();
-			
-			//_synth.play();
-		}
-		
-		/**
-		 * When the forward button is clicked, moves forward through the history
-		 * @param	button	TinyButton clicked
-		 */
-		private function clickForward(button:TinyButton):void
-		{
-			_historyPos++;
-			if(_historyPos > 0) 					_back.enabled = true;
-			if(_historyPos == _history.length - 1) 	_forward.enabled = false;
-			
-			//_synth.stop();
-			//_synth.params = _history[_historyPos];
-			
-			updateSliders();
-			updateCopyPaste();
-			
-			//_synth.play();
-		}
-		
-		/**
-		 * Adds a new sound effect to the history. 
-		 * Called just before a new sound effect is generated.
-		 */
-		private function addToHistory():void
-		{
-			_historyPos++;
-			//_synth.params = _synth.params.clone();
-			_history = _history.slice(0, _historyPos);
-			//_history.push(_synth.params);
-			
-			_back.enabled = true;
-			_forward.enabled = false;
-		}   
-		
-		//--------------------------------------------------------------------------
-		//	
 		//  Play/Save/Export Methods
 		//
 		//--------------------------------------------------------------------------
@@ -638,7 +706,6 @@
 		{
 			_fileRef.removeEventListener(Event.COMPLETE, onLoadSettings);
 			
-			addToHistory();
 			setSettingsFile(_fileRef.data);
 			updateSliders();
 			updateCopyPaste();
@@ -863,7 +930,7 @@
 			_copyPaste.type = TextFieldType.INPUT;
 			_copyPaste.embedFonts = true;
 			_copyPaste.width = 640;
-			_copyPaste.height = 180;
+			_copyPaste.height = 800;
 			_copyPaste.x = 0;
 			_copyPaste.y = -20;
 			addChild(_copyPaste);
@@ -891,9 +958,7 @@
 		 * @param	e	Text input event
 		 */
 		private function updateFromCopyPaste(e:TextEvent):void
-		{
-			if (e.text.split(",").length == 24) addToHistory();
-			
+		{			
 			if (!_synthS.params.setSettingsString(e.text)) 
 			{
 				_copyPaste.setSelection(0, _copyPaste.text.length);
@@ -921,7 +986,7 @@
 		 * @param	y			Y position of the label
 		 * @param	colour		Colour of the text
 		 */
-		private function addLabel(label:String, x:Number, y:Number, colour:uint, width:Number = 200):void
+		private function addLabel(label:String, x:Number, y:Number, colour:uint, width:Number = 200):TextField
 		{
 			var txt:TextField = new TextField();
 			txt.defaultTextFormat = new TextFormat("Amiga4Ever", 8, colour);
@@ -933,6 +998,8 @@
 			txt.x = x;
 			txt.y = y;
 			addChild(txt);
+			
+			return txt;
 		}
 	}
 }

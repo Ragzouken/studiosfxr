@@ -2,6 +2,7 @@
 {
 	import flash.display.BlendMode;
 	import flash.display.CapsStyle;
+	import flash.display.DisplayObject;
 	import flash.display.JointStyle;
 	import flash.display.LineScaleMode;
 	import flash.display.Shape;
@@ -10,9 +11,14 @@
 	import flash.events.MouseEvent;
 	import flash.geom.ColorTransform;
 	import flash.geom.Rectangle;
+	import flash.geom.Vector3D;
 	import flash.text.TextField;
 	import flash.text.TextFormat;
 	import flash.text.TextFormatAlign;
+	import flash.utils.Dictionary;
+	
+	import flash.geom.Point;
+	import flash.geom.Matrix;
 	
 	/**
 	 * CircleButton
@@ -72,12 +78,13 @@
 		protected var _backSelected:Shape;				// Button graphic when selected		
 		
 		protected var _links:Shape;
+		protected var _connection:Shape;
 		
 		protected var _vis:Visualisation;
 		
 		protected var _rect:Rectangle;					// Bounds of the button in the context of the stage
 		
-		protected var _radius:int;                      // Button radius in pixels
+		protected var _radius:Number;                      // Button radius in pixels
 		
 		protected var _selected:Boolean;				// If the button is selected (only used for wave selection)
 		protected var _selectable:Boolean;				// If the button is selectable (only used for wave selection)
@@ -85,8 +92,10 @@
 		protected var _enabled:Boolean;					// If the button is currently clickable
 		
 		protected var _synth:SfxrSynth;
-		protected var _parents:Vector.<Individual>;
-		protected var _children:Vector.<Individual>;
+		
+		public var _parents:Dictionary;
+		public var _children:Dictionary;
+		public var _connects:Dictionary;
 		
 		protected var _dx:int, _dy:int;
 		
@@ -95,6 +104,10 @@
 		// Getters / Setters
 		//
 		//--------------------------------------------------------------------------
+		
+		public function get synth():SfxrSynth { return _synth; }
+		
+		public function get radius():Number { return _radius; }
 		
 		public function get params():SfxrParams { return _synth.params.clone(); }
 		public function set params(params:SfxrParams):void
@@ -147,7 +160,7 @@
 		 * @param	border			Thickness of the border in pixels
 		 * @param	selectable		If the button should be selectable
 		 */
-		public function Individual(app:SfxrApp, x:int, y:int, synth:SfxrSynth, parents:Vector.<Individual>):void 
+		public function Individual(app:SfxrApp, x:int, y:int, synth:SfxrSynth, parents:Dictionary):void 
 		{
 			_app = app;
 			
@@ -158,17 +171,19 @@
 			
 			_synth = synth;
 			_parents = parents;
-			_children = new Vector.<Individual>;
+			_children = new Dictionary();
 			
-			_selectable = false;// true;
+			_selectable = true;
 			_selected = false;
 			_enabled = true;
+			
+			_connects = new Dictionary();
 			
 			_backOff =      drawCircle(0x000000, 0xA09088);
 			_backDown =     drawCircle(0xA09088, 0xFFF0E0);
 			_backSelected = drawCircle(0x000000, 0x988070);
 			
-			addChild(_backOff);
+			addChildAt(_backOff, 0);
 			
 			_vis = new Visualisation(0, 0, _radius, _synth.params);
 			addChild(_vis);
@@ -180,6 +195,9 @@
 			addChild(_links);
 			redrawLinks();
 			
+			_connection = new Shape();
+			addChild(_connection);
+			
 			addEventListener(Event.ADDED_TO_STAGE, onAdded);
 		}
 		
@@ -190,13 +208,44 @@
 			synth.params = _synth.params.clone();
 			synth.params.mutate(magnitude);
 			
-			var parents:Vector.<Individual> = new Vector.<Individual>();
-			parents.push(this);
+			var parents:Dictionary = new Dictionary();
+			parents[this] = true;
 			
-			var child:Individual = new Individual(_app, x + 50, y, synth, parents);
-			_children.push(child);
+			var angle:Number = Math.PI * 2 * Math.random();
+			var radius:Number = _radius * 2 + _radius * Math.random();
+			
+			var child:Individual = new Individual(_app, x + radius * Math.cos(angle), y + radius * Math.sin(angle), synth, parents);
+			_children[child] = true;
+			
+			//_app.selected(child);
+			child._synth.play();
 			
 			return child;
+		}
+		
+		public function remove():void
+		{
+			for (var child:* in _children) {
+				delete child._parents[this];
+				child.redrawLinks();
+			}
+			
+			for (var parent:* in _parents) {
+				delete parent._children[this];
+				parent.redrawLinks();
+			}
+			
+			for (var linkpoint:* in _connects) {
+				linkpoint.unlink(this);
+			}
+			
+			stage.removeEventListener(MouseEvent.MOUSE_DOWN, onMouseDown);
+			stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseDrag);
+			stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseMoveLink);
+			stage.removeEventListener(MouseEvent.MOUSE_UP, onMouseUpDrag);
+			stage.removeEventListener(MouseEvent.MOUSE_UP, onMouseUpLink);
+			
+			_app.removeindividual(this);
 		}
 		
 		/**
@@ -227,19 +276,26 @@
 			
 			if (_enabled && Math.sqrt(dx*dx + dy*dy) < _radius)
 			{
-				stage.addEventListener(MouseEvent.MOUSE_UP, onMouseUp);
-				stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
-				
 				removeChildAt(0);
-				
 				addChildAt(_backDown, 0);
+				_vis.selected = false;
 				
-				_dx = dx;
-				_dy = dy;
+				if (e.shiftKey) {
+					stage.addEventListener(MouseEvent.MOUSE_UP, onMouseUpLink);
+					stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMoveLink);
+				} else {
+					stage.addEventListener(MouseEvent.MOUSE_UP, onMouseUpDrag);
+					stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseDrag);
+					
+					_dx = dx;
+					_dy = dy;
+				}
+			
+				e.stopImmediatePropagation();
 			}
 		}
 		
-		private function onMouseMove(e:MouseEvent):void
+		private function onMouseDrag(e:MouseEvent):void
 		{
 			x = stage.mouseX + _dx;
 			y = stage.mouseY + _dy;
@@ -247,30 +303,32 @@
 			_rect.x = stage.mouseX + _dx;
 			_rect.y = stage.mouseY + _dy;
 			
-			for each (var child:Individual in _children) {
+			for (var child:* in _children) {
 				child.redrawLinks();
 			}
 			
 			redrawLinks();
 		}
 		
-		/**
-		 * Sets the button to the off state if not selectable, switches state between off and selected if it is. 
-		 * Calls the onClick callback
-		 * @param	e	MouseEvent
-		 */
-		private function onMouseUp(e:MouseEvent):void 
+		private function onMouseMoveLink(e:MouseEvent):void
 		{
-			stage.removeEventListener(MouseEvent.MOUSE_UP, onMouseUp);
-			stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+			redrawConnection();
+		}
+		
+		private function onMouseUpLink(e:MouseEvent):void
+		{
+			_app.linkEvent(this, stage.mouseX, stage.mouseY);
 			
 			removeChildAt(0);
 			
-			if(_selectable && (_selected = !_selected))
+			if(_selectable)
 			{
+				_selected = true;
 				addChildAt(_backSelected, 0);
 				
 				_vis.selected = _selected;
+				
+				_app.selected(this);
 			}
 			else
 			{
@@ -279,9 +337,45 @@
 				_vis.selected = _selected;
 			}
 			
-			_synth.play();
+			removeChild(_connection);
+			_connection = new Shape();
+			addChild(_connection);
 			
-			_app.addChild(mutate(0.25));
+			stage.removeEventListener(MouseEvent.MOUSE_UP, onMouseUpLink);
+			stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseMoveLink);
+		}
+		
+		/**
+		 * Sets the button to the off state if not selectable, switches state between off and selected if it is. 
+		 * Calls the onClick callback
+		 * @param	e	MouseEvent
+		 */
+		private function onMouseUpDrag(e:MouseEvent):void 
+		{
+			stage.removeEventListener(MouseEvent.MOUSE_UP, onMouseUpDrag);
+			stage.removeEventListener(MouseEvent.MOUSE_MOVE, onMouseDrag);
+			
+			removeChildAt(0);
+			
+			if(_selectable)
+			{
+				_selected = true;
+				addChildAt(_backSelected, 0);
+				
+				_vis.selected = _selected;
+				
+				_app.selected(this);
+			}
+			else
+			{
+				addChildAt(_backOff, 0);
+				
+				_vis.selected = _selected;
+			}
+			
+			if (x < -_radius/2 || x > 640 + _radius/2) { remove(); return; }
+			
+			_synth.play();
 		}
 		
 		//--------------------------------------------------------------------------
@@ -290,20 +384,61 @@
 		//
 		//--------------------------------------------------------------------------
 		
+		public function redrawConnection():void
+		{
+			removeChild(_connection);
+			_connection = new Shape();
+			addChild(_connection);
+			
+			var start:Vector3D = new Vector3D(0, 0, 0);
+			var end:Vector3D = new Vector3D(stage.mouseX - x, stage.mouseY - y, 0);
+			
+			var vector:Vector3D = end.subtract(start);
+			vector.normalize();
+			
+			vector.scaleBy(_radius);
+			
+			start.incrementBy(vector);
+			//end.decrementBy(vector);
+			
+			_connection.graphics.moveTo(start.x, start.y);
+			_connection.graphics.lineStyle(2, 0x000000, 1, true, LineScaleMode.NORMAL, CapsStyle.SQUARE, JointStyle.MITER);
+			_connection.graphics.lineTo(end.x, end.y);
+		}
+		
 		public function redrawLinks():void
 		{
 			removeChild(_links);
 			_links = new Shape();
 			addChild(_links);
 			
-			for each (var parent:Individual in _parents) {
-				_links.graphics.moveTo(0, 0);
-				_links.graphics.lineStyle(1, 0x000000, 1, true, LineScaleMode.NORMAL, CapsStyle.SQUARE, JointStyle.MITER);
-				_links.graphics.lineTo(parent.x - x, parent.y - y);
+			for (var parent:* in _parents) {
+				var start:Vector3D = new Vector3D(0, 0, 0);
+				var end:Vector3D = new Vector3D(parent.x - x, parent.y - y, 0);
+				
+				var vector:Vector3D = end.subtract(start);
+				var distance:Number = vector.length;
+				vector.normalize();
+				
+				vector.scaleBy(_radius);
+				
+				start.incrementBy(vector);
+				end.decrementBy(vector);
+				
+				var u:Number = Math.min(1, Math.max(0, distance - 50) / 300);
+				var alpha:Number = 1 - (0.9 * u);
+				
+				_links.graphics.moveTo(start.x, start.y);
+				_links.graphics.lineStyle(1, 0x000000, alpha, true, LineScaleMode.NORMAL, CapsStyle.SQUARE, JointStyle.MITER);
+				_links.graphics.lineTo(end.x, end.y);
+				
+				_links.graphics.beginFill(0x000000, 1);
+				_links.graphics.drawCircle(end.x, end.y, 2);
+				_links.graphics.endFill();
 			}
 			
 			_links.graphics.beginFill(0x000000, 1);
-			_links.graphics.drawRect( -2, -2, 4, 4);
+			//_links.graphics.drawRect( -2, -2, 4, 4);
 			_links.graphics.endFill();
 		}
 		
@@ -317,9 +452,10 @@
 		private function drawCircle(borderColour:uint, fillColour:uint):Shape
 		{
 			var rect:Shape = new Shape();
-			rect.graphics.lineStyle(1, borderColour, 1, true, LineScaleMode.NORMAL, CapsStyle.SQUARE, JointStyle.MITER);
+			rect.graphics.lineStyle(1, borderColour, 1, true);
 			rect.graphics.beginFill(fillColour, 1);
-			rect.graphics.drawRect(-_radius, -_radius, _radius*2, _radius*2);
+			rect.graphics.drawCircle(.5, .5, _radius);
+			//rect.graphics.drawRect(-_radius, -_radius, _radius*2, _radius*2);
 			rect.graphics.endFill();
 			return rect;
 		}

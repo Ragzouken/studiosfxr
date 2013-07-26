@@ -452,42 +452,42 @@ package
 			
 			_waveType = uint(Math.random() * 4);
 			
-			_attackTime =  		pow(Math.random()*2-1, 4);
-			_sustainTime =  	pow(Math.random()*2-1, 2);
-			_sustainPunch =  	pow(Math.random()*0.8, 2);
-			_decayTime =  		Math.random();
+			attackTime =  		pow(Math.random()*2-1, 4);
+			sustainTime =  		pow(Math.random()*2-1, 2);
+			sustainPunch =  	pow(Math.random()*0.8, 2);
+			decayTime =  		Math.random();
 
-			_startFrequency =  	(Math.random() < 0.5) ? pow(Math.random()*2-1, 2) : (pow(Math.random() * 0.5, 3) + 0.5);
-			_minFrequency =  	0.0;
+			startFrequency =  	(Math.random() < 0.5) ? pow(Math.random()*2-1, 2) : (pow(Math.random() * 0.5, 3) + 0.5);
+			minFrequency =  	0.0;
 			
-			_slide =  			pow(Math.random()*2-1, 5);
-			_deltaSlide =  		pow(Math.random()*2-1, 3);
+			slide =  			pow(Math.random()*2-1, 5);
+			deltaSlide =  		pow(Math.random()*2-1, 3);
 			
-			_vibratoDepth =  	pow(Math.random(), 3);
-			_vibratoSpeed =  	Math.random();
+			vibratoDepth =  	pow(Math.random(), 3);
+			vibratoSpeed =  	Math.random();
 			
-			_changeAmount =  	Math.random()*2-1;
-			_changeSpeed =  	Math.random();
+			changeAmount =  	Math.random()*2-1;
+			changeSpeed =  	Math.random();
 			
-			_squareDuty =  		Math.random();
-			_dutySweep =  		pow(Math.random()*2-1, 3);
+			squareDuty =  		Math.random();
+			dutySweep =  		pow(Math.random()*2-1, 3);
 			
-			_repeatSpeed =  	Math.random();
+			repeatSpeed =  	Math.random();
 			
-			_phaserOffset =  	pow(Math.random()*2-1, 3);
-			_phaserSweep =  	pow(Math.random()*2-1, 3);
+			phaserOffset =  	pow(Math.random()*2-1, 3);
+			phaserSweep =  	pow(Math.random()*2-1, 3);
 			
-			_lpFilterCutoff =  		1 - pow(Math.random(), 3);
-			_lpFilterCutoffSweep = 	pow(Math.random()*2-1, 3);
-			_lpFilterResonance =  	Math.random();
+			lpFilterCutoff =  		1 - pow(Math.random(), 3);
+			lpFilterCutoffSweep = 	pow(Math.random()*2-1, 3);
+			lpFilterResonance =  	Math.random();
 			
-			_hpFilterCutoff =  		pow(Math.random(), 5);
-			_hpFilterCutoffSweep = 	pow(Math.random()*2-1, 5);
+			hpFilterCutoff =  		pow(Math.random(), 5);
+			hpFilterCutoffSweep = 	pow(Math.random()*2-1, 5);
 			
 			if(_attackTime + _sustainTime + _decayTime < 0.2)
 			{
-				_sustainTime = 0.2 + Math.random() * 0.3;
-				_decayTime = 0.2 + Math.random() * 0.3;
+				sustainTime = 0.2 + Math.random() * 0.3;
+				decayTime = 0.2 + Math.random() * 0.3;
 			}
 			
 			if((_startFrequency > 0.7 && _slide > 0.2) || (_startFrequency < 0.2 && _slide < -0.05)) 
@@ -497,7 +497,7 @@ package
 			
 			if(_lpFilterCutoff < 0.1 && _lpFilterCutoffSweep < -0.05) 
 			{
-				_lpFilterCutoffSweep = -_lpFilterCutoffSweep;
+				lpFilterCutoffSweep = -_lpFilterCutoffSweep;
 			}
 		}
 		
