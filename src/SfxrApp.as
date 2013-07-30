@@ -34,6 +34,9 @@
 	import flash.utils.ByteArray;
 	import flash.utils.Dictionary;
 	import flash.utils.Endian;
+	import game.Game;
+	import game.Jumper.Jumper;
+	import game.Shooter.Shooter;
 	import ui.LinkPoint;
 	import ui.TinyButton;
 	import ui.TinyCheckbox;
@@ -84,7 +87,7 @@
 	 */
 	
 	 // 527
-	[SWF(width='640', height='777', backgroundColor='#C0B090', frameRate='25')]
+	[SWF(width='640', height='707', backgroundColor='#C0B090', frameRate='25')]
 	public class SfxrApp extends Sprite
 	{
 		//--------------------------------------------------------------------------
@@ -146,6 +149,9 @@
 		private var _gameLabels:Vector.<TextField>;
 		
 		private var _focus:String;
+		
+		private var _game:Game;
+		private var _pause:TinyButton;
 		
 		//--------------------------------------------------------------------------
 		//	
@@ -226,6 +232,8 @@
 		
 		private function setupSweeper():void
 		{
+			//
+			
 			_synthL = new SfxrSynth();
 			_synthR = new SfxrSynth();
 			_synthS = new SfxrSynth();
@@ -239,7 +247,7 @@
 			_synthS.params = _synthL.params.clone();
 			
 			var width:int  = 640;
-			var gameHeight:int = 250;
+			var gameHeight:int = 180;
 			
 			var sweeperWidth:int = width - 8 - 104;
 			
@@ -279,6 +287,12 @@
 										Vector.<Number>([0, divide, width, divide])));
 			lines.push(new GraphicsPath(Vector.<int>([1,2]), 
 										Vector.<Number>([0, gameHeight, width, gameHeight])));
+										
+			var y:int = 15, w:int = 320, h:int = 120;
+			var x:int = (640 - w) / 2;
+			
+			lines.push(new GraphicsPath(Vector.<int>([1,2, 2, 2, 2]), 
+										Vector.<Number>([x, y, x+w, y, x+w, y+h, x, y+h, x, y])));
 			graphics.drawGraphicsData(lines);
 			
 			_sweeper = new TinySlider(onSweeperChange, "", false, sweeperWidth, 54);
@@ -441,25 +455,20 @@
 							break;
 					}
 				} else if (_focus == "GAME") {
-					if (_gameLinks[0].linked) {
-						_gameLinks[0].individual.synth.play();
-					}
 				}
 			});
-			
-			
 			
 			_gameLinks = new Vector.<LinkPoint>();
 			_gameLabels = new Vector.<TextField>();
 			
-			var gap:int = (640) / 5;
+			var gap:int = 320 / 2;
 			
-			for (var i:int = 0; i < 5; ++i) {
+			for (var i:int = 0; i < 3; ++i) {
 				var thing:Function = function(linkpoint:LinkPoint, linked:Boolean):void { };
 				
 				var link:LinkPoint = new LinkPoint(this, thing);
-				link.x = 40 - 16 + i * gap;
-				link.y = gameHeight - 40;
+				link.x = 160 + i * gap - 9;
+				link.y = gameHeight - 30;
 				addChild(link);
 				
 				var label:TextField = addLabel("SOUND" + String(i+1), link.x + 18 + 2, link.y + 1, 0x504030);
@@ -471,11 +480,56 @@
 				this.addEventListener(Event.ENTER_FRAME, link.onDrawFrame);
 			}
 			
+			var onPause:Function = function (button_:TinyButton):void {
+				_game.paused = button_.selected;
+			};
+			
+			_pause = new TinyButton(onPause, "PAUSE", 1, true);
+			_pause.x = 320 + 160 + 4;
+			_pause.y = 15;
+			addChild(_pause);
+			
+			var y:int = 15, w:int = 320, h:int = 120;
+			var x:int = (640 - w) / 2;
+			
+			var shooterButton:TinyButton;
+			var jumperButton:TinyButton;
+			
+			var shooter:Game = new Shooter(_gameLinks);
+			shooter.x = x;
+			shooter.y = y;
+			
+			var jumper:Game = new Jumper(_gameLinks);
+			jumper.x = x;
+			jumper.y = y;
+			
+			var onShooter:Function = function (button_:TinyButton):void {
+				shooterButton.selected = true;
+				jumperButton.selected = false;
+				
+				setGame(shooter);
+			}
+			
+			var onJumper:Function = function (button_:TinyButton):void {
+				shooterButton.selected = false;
+				jumperButton.selected = true;
+				
+				setGame(jumper);
+			}
+			
+			shooterButton = new TinyButton(onShooter, "SHOOTER", 1, true);
+			shooterButton.x = 160 - 4 - 104;
+			shooterButton.y = 15;
+			addChild(shooterButton);
+			
+			jumperButton = new TinyButton(onJumper, "JUMPER", 1, true);
+			jumperButton.x = 160 - 4 - 104;
+			jumperButton.y = 40;
+			addChild(jumperButton);
+			
 			_focus = "GAME";
 			
 			var focus:Function = function (e:MouseEvent):void {
-				trace(stage.mouseY + " " + gameHeight);
-				
 				if (stage.mouseY < gameHeight) {
 					_focus = "GAME";
 				} else {
@@ -485,16 +539,25 @@
 			
 			addEventListener(MouseEvent.MOUSE_UP, focus);
 			
-			setGamePlatformer();
+			setGame(shooter);
+			shooterButton.selected = true;
 		}
 		
-		public function setGamePlatformer():void
+		public function setGame(game_:Game):void
 		{
-			_gameLabels[0].text = "JUMP";
-			_gameLabels[1].text = "COIN";
-			_gameLabels[2].text = "SHOOT";
-			_gameLabels[3].text = "UNUSED";
-			_gameLabels[4].text = "UNUSED";
+			if (_game) {
+				removeChild(_game);
+				_game.paused = true;
+			}
+			
+			_game = game_;
+			_game.paused = _pause.selected;
+			
+			addChild(_game);
+			
+			for (var i:int = 0; i < 3; ++i) {
+				_gameLabels[i].text = game_.labels[i];
+			}
 		}
 		
 		public function removeindividual(individual:Individual):void 

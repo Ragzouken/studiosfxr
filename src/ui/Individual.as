@@ -373,7 +373,7 @@
 				_vis.selected = _selected;
 			}
 			
-			if (x < -_radius/2 || x > 640 + _radius/2) { remove(); return; }
+			if (x < -_radius/2 || x > 640 + _radius/2 || y < -_radius/2 || y > 707 + _radius/2) { remove(); return; }
 			
 			_synth.play();
 		}

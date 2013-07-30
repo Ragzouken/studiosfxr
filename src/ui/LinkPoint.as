@@ -60,15 +60,25 @@ package ui
 			_app.addLinkListener(this.onLink);
 		}
 		
+		public function play():void
+		{
+			if (linked) {
+				_individual.synth.play();
+			}
+		}
+		
 		private function onLink(individual:Individual, x:int, y:int):void
 		{
 			if (new Rectangle(this.x, this.y, 16, 16).contains(x, y))
 			{
+				if (this.individual != null) {
+					delete this.individual._connects[this];
+				}
+				
 				if (individual != this.individual) {
 					this.individual = individual;
 					this.individual._connects[this] = true;
 				} else {
-					delete this.individual._connects[this];
 					this.individual = null;
 				}
 			}
